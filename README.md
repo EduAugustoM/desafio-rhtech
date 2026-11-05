@@ -405,3 +405,32 @@ Abra o agente dentro da sua cópia desta pasta. Na raiz do t4h-desafios, o `CLAU
 - Em caso de dúvidas, use o canal combinado na largada
 
 Boa sorte no seu desafio!
+
+---
+
+## Resultados do Desafio (Entrega — Pesquisa e Inovação)
+
+### O Problema Diagnosticado
+Na configuração original (`0,5 CPU / 256 MB` na API Node.js 20 e `1,0 CPU / 512 MB` no PostgreSQL 16.4), a aplicação processava apenas **`4,34 req/s`** com tempo de resposta **`p95` de `14.721,2 ms` (14,7 segundos)** e o banco saturado em **`98,0%` de CPU**. O diagnóstico ([`diagnostico/`](diagnostico/)) identificou:
+1. **Conexão por query e log síncrono:** `api/src/db.js` abria e fechava um `new Client()` a cada consulta SQL e `api/src/server.js` serializava o corpo inteiro da resposta com `console.log(JSON.stringify)` síncrono em toda requisição.
+2. **Ausência de índices secundários:** `banco/01-estrutura.sql` tinha apenas chaves primárias, gerando `5.415` *Sequential Scans* e **`3,92 bilhões` de tuplas varridas** em `itens_pedido` ([`01-estatisticas-banco-baseline.txt`](diagnostico/01-estatisticas-banco-baseline.txt)).
+3. **Consultas `N+1` e transferência desnecessária (`SELECT *`):** `/clientes/:id/pedidos` executava dezenas de queries em loop, enquanto `/pedidos` e `/relatorios/vendas-por-dia` trafegavam a coluna longa `observacoes` e agregavam resultados em JavaScript.
+4. **Agregações analíticas sob demanda:** `/relatorios/vendas-por-dia` e `/relatorios/top-produtos` varriam 1,5 milhão de itens a cada chamada.
+
+### Resumo dos Experimentos e Resultados (Mediana de 3 Execuções)
+
+| # | Rótulo | Status | `p95` Geral | Mediana Geral | `req/s` | CPU Média (Banco / API) | Memória Máx (Banco / API) |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| `00` | [`00-linha-de-base`](resultados/20261105-171710-00-linha-de-base/resumo.txt) | Linha de Base | `14721.2 ms` | `900.6 ms` | `4.34` | `98.0%` / `7.7%` | `450.3 MiB` / `43.0 MiB` |
+| `01` | [`01-tuning-postgres-sem-indices`](resultados/20261105-173011-01-tuning-postgres-sem-indices/resumo.txt) | Aplicada, sem ganho | `14165.3 ms` | `800.7 ms` | `4.77` | `98.5%` / `7.8%` | `345.6 MiB` / `42.0 MiB` |
+| `02` | [`02-pool-conexoes-e-log`](resultados/20261105-173432-02-pool-conexoes-e-log/resumo.txt) | Aplicada e medida | `10349.0 ms` | `515.4 ms` | `5.54` | `98.2%` / `6.5%` | `475.1 MiB` / `51.8 MiB` |
+| `03` | [`03-indices-banco`](resultados/20261105-180612-03-indices-banco/resumo.txt) | Aplicada e medida | `4451.7 ms` | `101.3 ms` | `26.66` | `95.4%` / `25.0%` | `474.2 MiB` / `83.5 MiB` |
+| `04` | [`04-reescrita-queries-n1-e-sql`](resultados/20261105-180839-04-reescrita-queries-n1-e-sql/resumo.txt) | Aplicada e medida | `4617.4 ms` | `84.1 ms` | `30.70` | `98.0%` / `3.7%` | `474.5 MiB` / `30.0 MiB` |
+| `05` | [`05-materialized-views`](resultados/20261105-182539-05-materialized-views/resumo.txt) | **Final (Aplicada)** | **`61.4 ms` (-99,58%)** | **`5.9 ms` (-99,34%)** | **`1513.43` (348,7x)** | **`70.1%`** / `48.9%` | **`205.2 MiB`** / `31.8 MiB` |
+
+### Navegação pelos Artefatos da Entrega
+- **Artigo Técnico Completo:** [`artigo/artigo.md`](artigo/artigo.md)
+- **Tabela de Experimentos e Por Rota:** [`experimentos.md`](experimentos.md)
+- **Fichas de Testes Futuros (Pesquisadas):** [`proximos-testes.md`](proximos-testes.md)
+- **Brainstorm e Processo de Decisão:** [`BRAINSTORM.md`](BRAINSTORM.md)
+- **Evidências de Diagnóstico (`EXPLAIN ANALYZE` Antes e Depois):** [`diagnostico/`](diagnostico/)
