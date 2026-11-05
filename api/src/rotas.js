@@ -115,7 +115,7 @@ rotas.get('/pedidos', assincrono(async (req, res) => {
   if (pagina === null) return res.status(400).json({ erro: 'pagina invalida' });
 
   const [[contagem], linhas] = await Promise.all([
-    consultar('SELECT count(*) AS total FROM pedidos WHERE status = $1', [status]),
+    consultar('SELECT total FROM mv_contagem_pedidos_status WHERE status = $1', [status]),
     consultar(
       'SELECT id, cliente_id, status, criado_em FROM pedidos WHERE status = $1 ORDER BY criado_em DESC, id DESC LIMIT $2 OFFSET $3',
       [status, TAMANHO_PAGINA, (pagina - 1) * TAMANHO_PAGINA],
@@ -125,7 +125,7 @@ rotas.get('/pedidos', assincrono(async (req, res) => {
   res.json({
     pagina,
     tamanho_pagina: TAMANHO_PAGINA,
-    total: Number(contagem.total),
+    total: Number(contagem ? contagem.total : 0),
     pedidos: linhas.map((linha) => ({
       id: linha.id,
       cliente_id: linha.cliente_id,
@@ -163,16 +163,10 @@ rotas.get('/relatorios/vendas-por-dia', assincrono(async (req, res) => {
   }
 
   const linhas = await consultar(
-    `SELECT p.criado_em::date::text AS dia,
-            count(DISTINCT p.id) AS pedidos,
-            sum(i.quantidade) AS itens,
-            sum(i.quantidade * i.preco_unitario_centavos) AS receita_centavos
-       FROM pedidos p
-       JOIN itens_pedido i ON i.pedido_id = p.id
-      WHERE p.criado_em::date BETWEEN $1::date AND $2::date
-        AND p.status <> 'cancelado'
-      GROUP BY p.criado_em::date
-      ORDER BY p.criado_em::date`,
+    `SELECT dia, pedidos, itens, receita_centavos
+       FROM mv_vendas_por_dia
+      WHERE dia_data BETWEEN $1::date AND $2::date
+      ORDER BY dia_data`,
     [req.query.inicio, req.query.fim],
   );
 
@@ -189,21 +183,15 @@ rotas.get('/relatorios/top-produtos', assincrono(async (req, res) => {
   if (limite === null || limite > 50) return res.status(400).json({ erro: 'limite deve ser um inteiro entre 1 e 50' });
 
   const linhas = await consultar(
-    `SELECT pr.id, pr.nome, pr.categoria,
-            sum(i.quantidade) AS unidades,
-            sum(i.quantidade * i.preco_unitario_centavos) AS receita_centavos
-       FROM itens_pedido i
-       JOIN pedidos p ON p.id = i.pedido_id
-       JOIN produtos pr ON pr.id = i.produto_id
-      WHERE p.status <> 'cancelado'
-      GROUP BY pr.id, pr.nome, pr.categoria
-      ORDER BY receita_centavos DESC, pr.id
+    `SELECT produto_id, nome, categoria, unidades, receita_centavos
+       FROM mv_top_produtos
+      ORDER BY receita_centavos DESC, produto_id ASC
       LIMIT $1`,
     [limite],
   );
 
   res.json(linhas.map((linha) => ({
-    produto_id: linha.id,
+    produto_id: linha.produto_id,
     nome: linha.nome,
     categoria: linha.categoria,
     unidades: Number(linha.unidades),
