@@ -1,0 +1,3 @@
+# Ignore local AI agent toolkits and PDF statement if needed
+.agents/
+*.pdf
