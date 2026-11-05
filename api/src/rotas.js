@@ -44,7 +44,7 @@ rotas.get('/clientes', assincrono(async (req, res) => {
   }
 
   const linhas = await consultar(
-    'SELECT * FROM clientes WHERE lower(email) = lower($1) ORDER BY id',
+    'SELECT id, nome, email, cidade, criado_em FROM clientes WHERE lower(email) = lower($1) ORDER BY id',
     [email.trim()],
   );
   res.json(linhas.map(formatarCliente));
@@ -54,7 +54,7 @@ rotas.get('/clientes/:id', assincrono(async (req, res) => {
   const id = inteiroPositivo(req.params.id);
   if (id === null) return res.status(400).json({ erro: 'id invalido' });
 
-  const linhas = await consultar('SELECT * FROM clientes WHERE id = $1', [id]);
+  const linhas = await consultar('SELECT id, nome, email, cidade, criado_em FROM clientes WHERE id = $1', [id]);
   if (linhas.length === 0) return res.status(404).json({ erro: 'cliente nao encontrado' });
   res.json(formatarCliente(linhas[0]));
 }));
@@ -63,41 +63,46 @@ rotas.get('/clientes/:id/pedidos', assincrono(async (req, res) => {
   const id = inteiroPositivo(req.params.id);
   if (id === null) return res.status(400).json({ erro: 'id invalido' });
 
-  const clientes = await consultar('SELECT * FROM clientes WHERE id = $1', [id]);
+  const clientes = await consultar('SELECT 1 FROM clientes WHERE id = $1', [id]);
   if (clientes.length === 0) return res.status(404).json({ erro: 'cliente nao encontrado' });
 
-  const pedidos = await consultar(
-    'SELECT * FROM pedidos WHERE cliente_id = $1 ORDER BY criado_em DESC, id DESC',
+  const linhas = await consultar(
+    `SELECT p.id AS pedido_id, p.status, p.criado_em,
+            i.id AS item_id, i.produto_id, pr.nome AS produto_nome,
+            i.quantidade, i.preco_unitario_centavos
+       FROM pedidos p
+       LEFT JOIN itens_pedido i ON i.pedido_id = p.id
+       LEFT JOIN produtos pr ON pr.id = i.produto_id
+      WHERE p.cliente_id = $1
+      ORDER BY p.criado_em DESC, p.id DESC, i.id ASC`,
     [id],
   );
 
-  const resposta = [];
-  for (const pedido of pedidos) {
-    const itens = await consultar('SELECT * FROM itens_pedido WHERE pedido_id = $1 ORDER BY id', [pedido.id]);
-
-    const itensFormatados = [];
-    let total = 0;
-    for (const item of itens) {
-      const [produto] = await consultar('SELECT * FROM produtos WHERE id = $1', [item.produto_id]);
-      itensFormatados.push({
-        produto_id: item.produto_id,
-        produto_nome: produto.nome,
-        quantidade: item.quantidade,
-        preco_unitario_centavos: item.preco_unitario_centavos,
-      });
-      total += item.quantidade * item.preco_unitario_centavos;
+  const mapaPedidos = new Map();
+  for (const linha of linhas) {
+    let pedido = mapaPedidos.get(linha.pedido_id);
+    if (!pedido) {
+      pedido = {
+        id: linha.pedido_id,
+        status: linha.status,
+        criado_em: linha.criado_em,
+        total_centavos: 0,
+        itens: [],
+      };
+      mapaPedidos.set(linha.pedido_id, pedido);
     }
-
-    resposta.push({
-      id: pedido.id,
-      status: pedido.status,
-      criado_em: pedido.criado_em,
-      total_centavos: total,
-      itens: itensFormatados,
-    });
+    if (linha.item_id !== null) {
+      pedido.itens.push({
+        produto_id: linha.produto_id,
+        produto_nome: linha.produto_nome,
+        quantidade: linha.quantidade,
+        preco_unitario_centavos: linha.preco_unitario_centavos,
+      });
+      pedido.total_centavos += linha.quantidade * linha.preco_unitario_centavos;
+    }
   }
 
-  res.json(resposta);
+  res.json([...mapaPedidos.values()]);
 }));
 
 rotas.get('/pedidos', assincrono(async (req, res) => {
@@ -109,11 +114,13 @@ rotas.get('/pedidos', assincrono(async (req, res) => {
   const pagina = req.query.pagina === undefined ? 1 : inteiroPositivo(req.query.pagina);
   if (pagina === null) return res.status(400).json({ erro: 'pagina invalida' });
 
-  const [contagem] = await consultar('SELECT count(*) AS total FROM pedidos WHERE status = $1', [status]);
-  const linhas = await consultar(
-    'SELECT * FROM pedidos WHERE status = $1 ORDER BY criado_em DESC, id DESC LIMIT $2 OFFSET $3',
-    [status, TAMANHO_PAGINA, (pagina - 1) * TAMANHO_PAGINA],
-  );
+  const [[contagem], linhas] = await Promise.all([
+    consultar('SELECT count(*) AS total FROM pedidos WHERE status = $1', [status]),
+    consultar(
+      'SELECT id, cliente_id, status, criado_em FROM pedidos WHERE status = $1 ORDER BY criado_em DESC, id DESC LIMIT $2 OFFSET $3',
+      [status, TAMANHO_PAGINA, (pagina - 1) * TAMANHO_PAGINA],
+    ),
+  ]);
 
   res.json({
     pagina,
@@ -133,7 +140,7 @@ rotas.get('/produtos/busca', assincrono(async (req, res) => {
   if (termo.length < 3) return res.status(400).json({ erro: 'o termo de busca precisa ter pelo menos 3 caracteres' });
 
   const linhas = await consultar(
-    "SELECT * FROM produtos WHERE nome ILIKE '%' || $1 || '%' ORDER BY nome, id LIMIT 20",
+    "SELECT id, nome, categoria, preco_centavos FROM produtos WHERE nome ILIKE '%' || $1 || '%' ORDER BY nome, id LIMIT 20",
     [termo],
   );
   res.json(linhas.map((linha) => ({
@@ -156,34 +163,25 @@ rotas.get('/relatorios/vendas-por-dia', assincrono(async (req, res) => {
   }
 
   const linhas = await consultar(
-    `SELECT p.id AS pedido_id, p.criado_em, p.observacoes, i.quantidade, i.preco_unitario_centavos
+    `SELECT p.criado_em::date::text AS dia,
+            count(DISTINCT p.id) AS pedidos,
+            sum(i.quantidade) AS itens,
+            sum(i.quantidade * i.preco_unitario_centavos) AS receita_centavos
        FROM pedidos p
        JOIN itens_pedido i ON i.pedido_id = p.id
-      WHERE p.criado_em::date BETWEEN $1 AND $2
-        AND p.status <> 'cancelado'`,
+      WHERE p.criado_em::date BETWEEN $1::date AND $2::date
+        AND p.status <> 'cancelado'
+      GROUP BY p.criado_em::date
+      ORDER BY p.criado_em::date`,
     [req.query.inicio, req.query.fim],
   );
 
-  const porDia = new Map();
-  for (const linha of linhas) {
-    const dia = linha.criado_em.toISOString().slice(0, 10);
-    if (!porDia.has(dia)) porDia.set(dia, { pedidos: new Set(), itens: 0, receita: 0 });
-    const acumulado = porDia.get(dia);
-    acumulado.pedidos.add(linha.pedido_id);
-    acumulado.itens += linha.quantidade;
-    acumulado.receita += linha.quantidade * linha.preco_unitario_centavos;
-  }
-
-  const resposta = [...porDia.entries()]
-    .sort(([a], [b]) => (a < b ? -1 : 1))
-    .map(([dia, acumulado]) => ({
-      dia,
-      pedidos: acumulado.pedidos.size,
-      itens: acumulado.itens,
-      receita_centavos: acumulado.receita,
-    }));
-
-  res.json(resposta);
+  res.json(linhas.map((linha) => ({
+    dia: linha.dia,
+    pedidos: Number(linha.pedidos),
+    itens: Number(linha.itens),
+    receita_centavos: Number(linha.receita_centavos),
+  })));
 }));
 
 rotas.get('/relatorios/top-produtos', assincrono(async (req, res) => {
