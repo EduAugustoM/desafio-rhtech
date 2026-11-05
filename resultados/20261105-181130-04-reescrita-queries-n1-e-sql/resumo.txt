@@ -1,0 +1,17 @@
+Medição: 04-reescrita-queries-n1-e-sql
+Carga: 20 usuários virtuais por 60s
+
+Requisições:        1847
+Requisições/s:      27.82
+Tempo de resposta:  mediana 84.1 ms | p95 5787.5 ms | p99 12924.5 ms
+Erros:              0.00%
+
+Por rota:
+rota                  req       mediana       p95           p99           erros   
+cliente               465       9.6 ms        99.8 ms       242.2 ms      0.0%    
+cliente-por-email     264       14.0 ms       101.2 ms      191.8 ms      0.0%    
+pedidos-do-cliente    396       90.9 ms       205.4 ms      404.5 ms      0.0%    
+pedidos-por-status    271       101.2 ms      641.9 ms      993.4 ms      0.0%    
+busca-produtos        278       84.7 ms       398.4 ms      599.3 ms      0.0%    
+vendas-por-dia        138       5429.0 ms     14293.5 ms    24378.4 ms    0.0%    
+top-produtos          35        7694.2 ms     16725.5 ms    17123.0 ms    0.0%    
