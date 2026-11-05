@@ -1,0 +1,17 @@
+Medição: 01-tuning-postgres-sem-indices
+Carga: 20 usuários virtuais por 60s
+
+Requisições:        312
+Requisições/s:      4.77
+Tempo de resposta:  mediana 801.8 ms | p95 13943.9 ms | p99 16721.2 ms
+Erros:              0.00%
+
+Por rota:
+rota                  req       mediana       p95           p99           erros   
+cliente               81        204.4 ms      401.2 ms      535.1 ms      0.0%    
+cliente-por-email     49        801.5 ms      1417.9 ms     1849.3 ms     0.0%    
+pedidos-do-cliente    66        12181.3 ms    16146.9 ms    16845.5 ms    0.0%    
+pedidos-por-status    34        5203.2 ms     8371.8 ms     9468.7 ms     0.0%    
+busca-produtos        54        407.5 ms      837.2 ms      998.5 ms      0.0%    
+vendas-por-dia        24        5618.5 ms     7320.7 ms     7844.9 ms     0.0%    
+top-produtos          4         17438.1 ms    24301.5 ms    24518.6 ms    0.0%    
