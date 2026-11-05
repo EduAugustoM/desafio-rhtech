@@ -1,0 +1,38 @@
+=== 1. ESTATISTICAS DE TABELAS (SEQ SCAN vs IDX SCAN APOS LINHA DE BASE) ===
+    tabela    | seq_scan | seq_tup_read | idx_scan | idx_tup_fetch | n_live_tup 
+--------------+----------+--------------+----------+---------------+------------
+ itens_pedido |     5415 |   3922500000 |        0 |             0 |    1500000
+ pedidos      |     2737 |    672000000 |  1500510 |       1500000 |     500000
+ clientes     |      339 |     33800000 |   501022 |        501008 |     100000
+ produtos     |      581 |     11600000 |  1507214 |       1507050 |      20000
+(4 rows)
+
+=== 2. TAMANHO DAS TABELAS E INDICES ===
+    tabela    | tamanho_tabela | tamanho_indices | tamanho_total 
+--------------+----------------+-----------------+---------------
+ pedidos      | 163 MB         | 11 MB           | 174 MB
+ itens_pedido | 75 MB          | 32 MB           | 107 MB
+ clientes     | 9288 kB        | 2208 kB         | 11 MB
+ produtos     | 1560 kB        | 456 kB          | 2016 kB
+(4 rows)
+
+=== 3. INDICES EXISTENTES ===
+  tablename   |     indexname     |                                   indexdef                                    
+--------------+-------------------+-------------------------------------------------------------------------------
+ clientes     | clientes_pkey     | CREATE UNIQUE INDEX clientes_pkey ON public.clientes USING btree (id)
+ itens_pedido | itens_pedido_pkey | CREATE UNIQUE INDEX itens_pedido_pkey ON public.itens_pedido USING btree (id)
+ pedidos      | pedidos_pkey      | CREATE UNIQUE INDEX pedidos_pkey ON public.pedidos USING btree (id)
+ produtos     | produtos_pkey     | CREATE UNIQUE INDEX produtos_pkey ON public.produtos USING btree (id)
+(4 rows)
+
+=== 4. PARAMETROS ATUAIS DO POSTGRESQL ===
+         name         | setting | unit |                                   short_desc                                    
+----------------------+---------+------+---------------------------------------------------------------------------------
+ effective_cache_size | 524288  | 8kB  | Sets the planner's assumption about the total size of the data caches.
+ maintenance_work_mem | 65536   | kB   | Sets the maximum memory to be used for maintenance operations.
+ max_connections      | 100     |      | Sets the maximum number of concurrent connections.
+ random_page_cost     | 4       |      | Sets the planner's estimate of the cost of a nonsequentially fetched disk page.
+ shared_buffers       | 16384   | 8kB  | Sets the number of shared memory buffers used by the server.
+ work_mem             | 4096    | kB   | Sets the maximum memory to be used for query workspaces.
+(6 rows)
+
